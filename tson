@@ -49,7 +49,7 @@ proc deserialize {value tree {root {}}} {
 	}
 
 	parser eval {SELECT * FROM JSON_EACH($value)} {
-		set item [$tree insert $root end -text $key -values [list $type $atom]]
+		set item [$tree insert $root end -text $key -values [list $atom $type]]
 		if {$type in {array object}} {
 			# Composite objects come with their own trees to
 			# deserialize.
@@ -83,11 +83,26 @@ menu .menubar.file
 . configure -menu .menubar
 
 ttk::treeview .t -columns {
-	type
 	atom
-} -show {tree headings}
+	type
+} -show {tree headings} -yscrollcommand {.s set}
 .t heading #0 -text Key
 .t heading type -text Type
 .t heading atom -text Value
 
-pack .t -expand yes -fill both
+# the longest type name is 'integer'; include some padding
+.t column type -width [expr {
+	round([font measure TkDefaultFont integer] + (12 * [tk scaling]))
+}]
+
+ttk::scrollbar .s -orient vertical -command {.t yview}
+
+grid .t .s -sticky nsew
+grid rowconfigure . 0 -weight 1
+grid columnconfigure . 0 -weight 1
+
+if {[llength $argv] > 0} {
+	with [open [lindex $argv 0]] as fd {
+		deserialize [read $fd] .t
+	}
+}
