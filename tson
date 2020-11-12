@@ -1,0 +1,77 @@
+package require Tcl 8.5
+package require Tk 8.5
+
+package require sqlite3
+
+sqlite3 parser :memory:
+if {[catch {
+	parser eval {SELECT json('{"a":"b"}')}
+}]} {
+	error "this version of sqlite does not include the json1 extension"
+}
+
+# "Safe" file-use construct: sets $fdvar to $fd and executes $script, closing
+# $fd and, if an error occurs, rethrowing it. The parameter 'as' is ignored as
+# syntactic sugar. Example usage:
+# with [open /tmp/foo r] as fd {
+# 	puts [read $fd]
+# }
+proc with {fd as fdvar script} {
+	try {
+		uplevel 1 set $fdvar $fd
+		uplevel 1 $script
+	} on error {err opts} {
+		return -options $opts $err
+	} finally {
+		uplevel 1 close $fd
+	}
+}
+
+proc deserialize {value tree {root {}}} {
+	foreach item [$tree children $root] {
+		$tree delete $item
+	}
+
+	parser eval {SELECT * FROM JSON_EACH($value)} {
+		set item [$tree insert $root end -text $key -values [list $type $atom]]
+		if {$type in {array object}} {
+			# Composite objects come with their own trees to
+			# deserialize.
+			deserialize $value $tree $item
+		}
+	}
+}
+
+proc file_open {} {
+	if {[set path [tk_getOpenFile -filetypes {
+		{"JSON Files" .json TEXT}
+		{"All Files"  *}
+	} -title "Open JSON file..."]] ne ""} {
+		with [open $path r] as fd {
+			deserialize [read $fd] .t
+		}
+	}
+}
+
+tk appname Tson
+wm title . Tson
+
+menu .menubar
+
+menu .menubar.file
+.menubar.file add command -label Open... -command file_open
+.menubar.file add command -label Quit -command exit
+
+.menubar add cascade -label File -menu .menubar.file
+
+. configure -menu .menubar
+
+ttk::treeview .t -columns {
+	type
+	atom
+} -show {tree headings}
+.t heading #0 -text Key
+.t heading type -text Type
+.t heading atom -text Value
+
+pack .t -expand yes -fill both
